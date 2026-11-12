@@ -44,6 +44,7 @@ const simulation = new Simulation(gameContent, host, {
 			view?.attach(rebuilt)
 			panels?.rebuild(rebuilt)
 		},
+		injectionFired : (core, flightSeconds) => view?.injectionFired(core, flightSeconds),
 		particleSpawned : particle => view?.particleSpawned(particle),
 		particleLanded : particle => view?.particleLanded(particle),
 		emissionAbsorbed : core => view?.emissionAbsorbed(core),
@@ -69,11 +70,11 @@ function advanceHint() {
 	} else if (hintProgress.fired) {
 		hint.textContent = "Now drag a core along its rail. Closer cores set each other off."
 	} else if (hintProgress.dragged) {
-		hint.textContent = "Now tap a core to fire a particle at the next one."
+		hint.textContent = "Now tap a core to fire a particle into it. That knocks one out towards the next core."
 	}
 }
 if (!localStorage.getItem(hintDoneKey)) {
-	hint.textContent = "Tap a core to fire a particle. Drag a core along its rail to move it."
+	hint.textContent = "Tap a core to fire a particle into it. That knocks one out towards the next core, earning energy as it flies."
 	hint.hidden = false
 	view.onFirstDrag = () => { hintProgress.dragged = true; advanceHint() }
 	view.onFirstFire = () => { hintProgress.fired = true; advanceHint() }

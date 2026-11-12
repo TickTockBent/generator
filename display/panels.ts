@@ -108,11 +108,12 @@ export class Panels {
 		railInput.addEventListener("input", () => core.setRailTarget(Number(railInput.value)))
 		railLabel.append(railCaption, railValue, railInput)
 
-		const fireButton = createElement("button", "action quiet", "Fire a particle")
+		const fireButton = createElement("button", "action quiet", `Fire a particle into ${core.definition.displayName}`)
 		fireButton.type = "button"
 		fireButton.addEventListener("click", () => core.fire())
+		const fireNote = createElement("p", "action-note", `Knocks a particle out towards ${core.next.definition.displayName}.`)
 
-		strip.append(heading, status, flight, railLabel, fireButton,
+		strip.append(heading, status, flight, railLabel, fireButton, fireNote,
 			this.buildEquipmentRow(core, core.own.source),
 			this.buildEquipmentRow(core, core.own.reflector),
 			this.buildEquipmentRow(core, core.own.poison),
@@ -224,7 +225,7 @@ export class Panels {
 
 	private buildUpgrades() : HTMLElement[] {
 		const upgrades = [...this.simulation.data.values()].filter((object) : object is GameAction => object.kind == "upgrade")
-		const empty = createElement("p", "panel-empty", "Nothing to buy yet. Make some energy: tap a core to fire it, or drag the cores closer together so they set each other off.")
+		const empty = createElement("p", "panel-empty", "Nothing to buy yet.")
 
 		this.refreshers.push(() => setHidden(empty, upgrades.some(upgrade => upgrade.seen)))
 

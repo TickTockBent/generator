@@ -86,10 +86,10 @@ body {
 .pool-hint {
 	position: absolute;
 	left: 50%;
-	bottom: 1.5rem;
+	bottom: 4.25rem;
 	transform: translateX(-50%);
 	width: max-content;
-	max-width: calc(100% - 3rem);
+	max-width: min(34rem, calc(100% - 3rem));
 	margin: 0;
 	padding: 0.5rem 0.9rem;
 	border-radius: 2px;
@@ -305,6 +305,12 @@ body {
 :focus-visible {
 	outline: 2px solid #0b6f8f;
 	outline-offset: 2px;
+}
+
+.action-note {
+	margin: 0.3rem 0 0;
+	color: var(--ink-soft);
+	font-size: 0.94rem;
 }
 
 /* --- equipment --- */

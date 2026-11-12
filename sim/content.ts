@@ -16,6 +16,8 @@ const reflectorRate = 1.5
 const sourceRate = 0.25
 /** Share of reactivity fully inserted control rods remove. */
 const rodStrength = 0.9
+/** Emissions one dose of poison absorbs. */
+const poisonDose = 25
 
 const coreNames = ["alpha", "beta", "gamma"]
 
@@ -115,7 +117,7 @@ const globalObjects : ObjectDefinition[] = [{
 	kind : "upgrade",
 	name : "amplifier",
 	displayName : "Yield amplifier",
-	description : "Particles deliver 50% more mass and energy. Needs every core holding the listed mass at rest.",
+	description : "Particles deliver 50% more mass and energy.",
 	revealAt : { energy : 8 },
 	requirements : {
 		alpha : { base : 8, multiplier : 1.5 },
@@ -129,7 +131,7 @@ const globalObjects : ObjectDefinition[] = [{
 	kind : "upgrade",
 	name : "accelerator",
 	displayName : "Accelerator",
-	description : "Particles fly 25% faster. Faster flight earns more and lands sooner.",
+	description : "Particles fly 25% faster.",
 	revealAt : { energy : 20 },
 	cost : {
 		energy : { base : 60, multiplier : 5 },
@@ -188,7 +190,7 @@ const perCoreObjects : ObjectDefinition[] = [{
 	kind : "equipment",
 	name : "source",
 	displayName : "Startup source",
-	description : "A steady trickle of emissions, however far out the core sits.",
+	description : "A steady trickle of emissions at any distance.",
 	revealAt : { energy : 10 },
 	cost : { energy : 40 },
 	max : 1,
@@ -196,7 +198,7 @@ const perCoreObjects : ObjectDefinition[] = [{
 	kind : "equipment",
 	name : "reflector",
 	displayName : "Reflector",
-	description : "Throws the core's own particles back at it: many more emissions at any distance. Wears out.",
+	description : "Many more emissions at any distance. Wears out.",
 	revealAt : { energy : 50 },
 	cost : { energy : 120 },
 	max : 1,
@@ -211,7 +213,7 @@ const perCoreObjects : ObjectDefinition[] = [{
 	kind : "equipment",
 	name : "poison",
 	displayName : "Poison dose",
-	description : "Absorbs the core's next emissions so it holds its mass. Burns off as it works.",
+	description : `Absorbs the core's next ${poisonDose} emissions.`,
 	revealAt : { energy : 30 },
 	cost : { energy : 25 },
 	action : (simulation, self) => {
@@ -225,7 +227,7 @@ const perCoreObjects : ObjectDefinition[] = [{
 	kind : "equipment",
 	name : "rods",
 	displayName : "Control rods",
-	description : "A dial for the core's reactivity. Fully in, it is almost silent.",
+	description : `Cuts the core's reactivity by up to ${rodStrength * 100}%.`,
 	revealAt : { energy : 80 },
 	cost : { energy : 200 },
 	max : 1,
@@ -244,10 +246,11 @@ export const gameContent : GameContent = {
 		railStart : 40,
 		energyScale : 2e-4,
 		reflectorLife : 300,
-		poisonDose : 25,
+		poisonDose,
 		timeBankRate : 0.5,
 		timeBankCapSeconds : 8 * 60 * 60,
 		autoSaveTicks : 1000,
+		injectionTicks : 14,
 	},
 
 	resources : globalObjects,

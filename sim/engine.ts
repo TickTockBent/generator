@@ -342,6 +342,9 @@ export class Simulation {
 			core.moveRail(tickSeconds)
 
 		for (const core of this.cores)
+			core.advanceInjections()
+
+		for (const core of this.cores)
 			core.rollEmission(tickSeconds)
 
 		for (const particle of this.particles)
@@ -691,6 +694,8 @@ export class Core extends Resource {
 	railTarget : number
 	/** Mass that has left this core and not yet landed; returned to it when a save is loaded. */
 	inFlight = 0
+	/** Ticks left for each injected particle still on its way in. */
+	private pendingInjections : number[] = []
 
 	constructor(definition : ObjectDefinition, simulation : Simulation, coreDefinition : CoreDefinition) {
 		super(definition, simulation, coreDefinition)
@@ -738,12 +743,16 @@ export class Core extends Resource {
 			this.own.rodInsertion.set(Math.min(1, Math.max(0, insertion)))
 	}
 
-	/** Fire one particle by hand. */
+	/** Fire a particle into the core. When it arrives it knocks one out towards the next core. */
 	fire() : boolean {
-		if (!this.shoot(true))
+		const simulation = this.simulation
+		const massSpokenFor = (this.pendingInjections.length + 1) * simulation.engine.emissionMass.value
+
+		if (this.value < massSpokenFor)
 			return false
 
-		this.simulation.engine.manualEmissions.add(1)
+		this.pendingInjections.push(simulation.tuning.injectionTicks)
+		simulation.listener.injectionFired?.(this, simulation.tuning.injectionTicks * simulation.tuning.tickMs / 1000)
 		return true
 	}
 
@@ -759,6 +768,20 @@ export class Core extends Resource {
 
 		// Position is not `value`, so dependants (every core's emission rate) are told explicitly.
 		this.markChanged()
+	}
+
+	advanceInjections() {
+		if (!this.pendingInjections.length)
+			return
+
+		for (let injectionIndex = 0; injectionIndex < this.pendingInjections.length; injectionIndex++)
+			this.pendingInjections[injectionIndex]--
+
+		while (this.pendingInjections.length && this.pendingInjections[0] <= 0) {
+			this.pendingInjections.shift()
+			if (this.shoot(true))
+				this.simulation.engine.manualEmissions.add(1)
+		}
 	}
 
 	rollEmission(seconds : number) {

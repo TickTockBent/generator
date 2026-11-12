@@ -75,6 +75,8 @@ export interface Tuning {
 	timeBankRate : number
 	timeBankCapSeconds : number
 	autoSaveTicks : number
+	/** Ticks an injected particle takes to reach its core. */
+	injectionTicks : number
 }
 
 export interface GameContent {
@@ -109,6 +111,8 @@ export interface SimulationOptions {
 export interface SimulationListener {
 	/** The object set was rebuilt (new game, load). Every object reference held by the display is stale. */
 	worldRebuilt?(simulation : Simulation) : void
+	/** The player fired a particle into a core; it arrives after `flightSeconds` of simulated time. */
+	injectionFired?(core : Core, flightSeconds : number) : void
 	particleSpawned?(particle : Particle, manual : boolean) : void
 	particleLanded?(particle : Particle) : void
 	/** A dose of poison absorbed an emission. */

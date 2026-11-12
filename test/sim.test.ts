@@ -82,7 +82,10 @@ test("a particle earns energy in proportion to mass, speed and distance flown", 
 	const alpha = world.simulation.cores[0]
 
 	assert.ok(alpha.fire())
+	assert.equal(world.events.spawned.length, 0, "the injected particle has not arrived yet")
+	world.run(tuning.injectionTicks * tuning.tickMs / 1000)
 	const particle = world.events.spawned[0]
+	assert.equal(particle.manual, true)
 	world.run(particle.length / particle.speed + 1)
 
 	const expectedEnergy = tuning.energyScale * particle.mass * particle.yieldFactor * particle.speed * particle.length
@@ -203,7 +206,7 @@ test("the yield amplifier needs every core holding its mass at rest", () => {
 	for (const core of simulation.cores)
 		for (let shot = 0; shot < 3; shot++)
 			core.fire()
-	simulation.update()
+	world.run(0.5)
 	assert.equal(amplifier.buy(), false, "each core has 7 at rest and 3 in flight")
 
 	world.run(20)
@@ -262,4 +265,21 @@ test("an unreadable or outdated save starts a new game and says so", () => {
 
 	const outdated = createTestWorld(1, new Map([["autoSave", JSON.stringify({ version : 3, resources : {} })]]))
 	assert.deepEqual(outdated.events.notifications, ["error"])
+})
+
+test("firing cannot promise more mass than the core holds", () => {
+	const world = createTestWorld()
+	const alpha = world.simulation.cores[0]
+	for (const core of world.simulation.cores)
+		core.own.poison.buy(true)
+
+	let accepted = 0
+	for (let attempt = 0; attempt < 25; attempt++)
+		if (alpha.fire())
+			accepted++
+
+	assert.equal(accepted, 10)
+	world.run(0.5)
+	assert.equal(alpha.value, 0)
+	assert.equal(alpha.inFlight, 10)
 })

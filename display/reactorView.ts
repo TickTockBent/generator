@@ -5,7 +5,7 @@ import type { Core, Particle, Simulation } from "../sim/index.ts"
 import { formatEnergy, formatNumber, mixColors, withAlpha } from "./format.ts"
 
 interface Effect {
-	kind : "ring" | "flash" | "text" | "shard"
+	kind : "ring" | "flash" | "text" | "shard" | "injection"
 	x : number
 	y : number
 	color : string
@@ -14,6 +14,8 @@ interface Effect {
 	/** Ring: final radius. Flash: radius. Text: rise distance. */
 	size : number
 	text? : string
+	/** Injection: the core being fired into. */
+	core? : Core
 }
 
 interface Drag {
@@ -28,6 +30,8 @@ const poolGlowColor = "#59dcff"
 const railInk = "rgba(190, 232, 240, 0.5)"
 const tapSlopPixels = 7
 const maximumEffects = 160
+/** How far past the end of its rail a core's injector sits, in rail units. */
+const injectorOffset = 5
 
 export class ReactorView {
 	private readonly canvas : HTMLCanvasElement
@@ -73,6 +77,10 @@ export class ReactorView {
 	}
 
 	// --- simulation events ---
+
+	injectionFired(core : Core, flightSeconds : number) {
+		this.addEffect({ kind : "injection", x : 0, y : 0, color : "#ffffff", ageMs : 0, lifeMs : flightSeconds * 1000 / this.simulation.speed, size : 0, core })
+	}
 
 	particleSpawned(particle : Particle) {
 		this.addEffect({ kind : "ring", x : particle.origin.x, y : particle.origin.y, color : particle.origin.color, ageMs : 0, lifeMs : 380, size : this.coreRadius(particle.origin) * 1.7 })
@@ -225,13 +233,78 @@ export class ReactorView {
 		context.fillStyle = water
 		context.fillRect(0, 0, this.widthPixels, this.heightPixels)
 
-		// Depth rings, like the rungs of a pool wall seen from above.
-		context.lineWidth = 1
-		for (let ringRadius = 8; ringRadius <= this.simulation.tuning.railMax + 24; ringRadius += 8) {
-			context.strokeStyle = `rgba(160, 225, 240, ${ringRadius % 16 == 0 ? 0.07 : 0.035})`
+		this.drawZones()
+	}
+
+	/** The pool floor: nested triangles pointing down each rail, split into one zone per core. */
+	private drawZones() {
+		const context = this.context
+		const centre = this.centre
+		const cores = this.simulation.cores
+		const tuning = this.simulation.tuning
+		const reach = Math.hypot(this.widthPixels, this.heightPixels)
+		const zoneHalfAngle = Math.PI / cores.length
+
+		// A wash of each core's color over its own third.
+		for (const core of cores) {
+			const wash = context.createRadialGradient(centre.x, centre.y, tuning.railMin * 0.5 * this.pixelsPerUnit, centre.x, centre.y, (tuning.railMax + 22) * this.pixelsPerUnit)
+			wash.addColorStop(0, withAlpha(core.color, 0))
+			wash.addColorStop(0.5, withAlpha(core.color, 0.075))
+			wash.addColorStop(1, withAlpha(core.color, 0.02))
+			context.fillStyle = wash
 			context.beginPath()
-			context.arc(centre.x, centre.y, ringRadius * this.pixelsPerUnit, 0, Math.PI * 2)
+			context.moveTo(centre.x, centre.y)
+			context.arc(centre.x, centre.y, reach, core.angle - zoneHalfAngle, core.angle + zoneHalfAngle)
+			context.closePath()
+			context.fill()
+		}
+
+		// Seams between zones: a heavy line with a lighter one beside it, like a joint between floor plates.
+		for (const core of cores) {
+			const seamAngle = core.angle + zoneHalfAngle
+			const seamStart = tuning.railMin * 0.5 * this.pixelsPerUnit
+			for (const [offsetPixels, strokeStyle, lineWidth] of [[0, "rgba(2, 16, 24, 0.55)", 3], [2.5, "rgba(170, 228, 240, 0.16)", 1]] as const) {
+				const acrossX = -Math.sin(seamAngle) * offsetPixels
+				const acrossY = Math.cos(seamAngle) * offsetPixels
+				context.strokeStyle = strokeStyle
+				context.lineWidth = lineWidth
+				context.beginPath()
+				context.moveTo(centre.x + Math.cos(seamAngle) * seamStart + acrossX, centre.y + Math.sin(seamAngle) * seamStart + acrossY)
+				context.lineTo(centre.x + Math.cos(seamAngle) * reach + acrossX, centre.y + Math.sin(seamAngle) * reach + acrossY)
+				context.stroke()
+			}
+		}
+
+		// Nested triangles with a corner on each rail. The outermost is the heaviest.
+		const triangleRadii = [tuning.railMin * 0.5, tuning.railMin, (tuning.railMin + tuning.railMax) / 2, tuning.railMax + 3]
+		triangleRadii.forEach((triangleRadius, triangleIndex) => {
+			const isOutermost = triangleIndex == triangleRadii.length - 1
+			context.strokeStyle = `rgba(170, 228, 240, ${isOutermost ? 0.3 : 0.1})`
+			context.lineWidth = isOutermost ? 1.6 : 1
+			context.beginPath()
+			cores.forEach((core, coreIndex) => {
+				const corner = this.toPixels(Math.cos(core.angle) * triangleRadius, Math.sin(core.angle) * triangleRadius)
+				if (coreIndex == 0)
+					context.moveTo(corner.x, corner.y)
+				else
+					context.lineTo(corner.x, corner.y)
+			})
+			context.closePath()
 			context.stroke()
+		})
+
+		// Zone names, stencilled beside the far end of each rail.
+		const labelSize = Math.max(13, 3.1 * this.pixelsPerUnit)
+		context.font = `600 ${labelSize}px "Barlow Condensed", sans-serif`
+		context.textBaseline = "middle"
+		for (const core of cores) {
+			const acrossX = -Math.sin(core.angle)
+			const acrossY = Math.cos(core.angle)
+			const labelDistance = tuning.railMax - 3
+			const label = this.toPixels(Math.cos(core.angle) * labelDistance + acrossX * 5, Math.sin(core.angle) * labelDistance + acrossY * 5)
+			context.textAlign = acrossX > 0.3 ? "left" : acrossX < -0.3 ? "right" : "left"
+			context.fillStyle = withAlpha(core.color, 0.7)
+			context.fillText(core.definition.displayName ?? core.name, label.x, label.y)
 		}
 	}
 
@@ -268,6 +341,21 @@ export class ReactorView {
 				context.lineTo(end.x, end.y)
 				context.stroke()
 			}
+
+			// The injector: fires particles down the rail into the core.
+			const nozzleTip = this.toPixels(along.x * (tuning.railMax + injectorOffset - 2.2), along.y * (tuning.railMax + injectorOffset - 2.2))
+			const nozzleBackLeft = this.toPixels(along.x * (tuning.railMax + injectorOffset) - across.x * 1.7, along.y * (tuning.railMax + injectorOffset) - across.y * 1.7)
+			const nozzleBackRight = this.toPixels(along.x * (tuning.railMax + injectorOffset) + across.x * 1.7, along.y * (tuning.railMax + injectorOffset) + across.y * 1.7)
+			context.fillStyle = "rgba(4, 22, 31, 0.9)"
+			context.strokeStyle = withAlpha(core.color, 0.75)
+			context.lineWidth = 1.3
+			context.beginPath()
+			context.moveTo(nozzleTip.x, nozzleTip.y)
+			context.lineTo(nozzleBackLeft.x, nozzleBackLeft.y)
+			context.lineTo(nozzleBackRight.x, nozzleBackRight.y)
+			context.closePath()
+			context.fill()
+			context.stroke()
 
 			// Where the core has been told to go.
 			if (core.railTarget != core.railPosition) {
@@ -310,6 +398,25 @@ export class ReactorView {
 				context.lineTo(end.x, end.y)
 				context.stroke()
 			}
+		}
+		context.setLineDash([])
+
+		// A chevron on each leg of the ring, pointing the way particles fly.
+		context.globalCompositeOperation = "source-over"
+		for (const core of cores) {
+			const middleX = (core.x + core.next.x) / 2
+			const middleY = (core.y + core.next.y) / 2
+			const heading = Math.atan2(core.next.y - core.y, core.next.x - core.x)
+			const tip = this.toPixels(middleX + Math.cos(heading) * 1.1, middleY + Math.sin(heading) * 1.1)
+			context.strokeStyle = mixColors(core.color, core.next.color, 0.5, 0.55)
+			context.lineWidth = 1.6
+			context.beginPath()
+			for (const side of [-1, 1]) {
+				const wingAngle = heading + Math.PI + side * 0.6
+				context.moveTo(tip.x, tip.y)
+				context.lineTo(tip.x + Math.cos(wingAngle) * 2 * this.pixelsPerUnit, tip.y + Math.sin(wingAngle) * 2 * this.pixelsPerUnit)
+			}
+			context.stroke()
 		}
 		context.restore()
 	}
@@ -357,18 +464,17 @@ export class ReactorView {
 		const emissionRate = own.emissionRate.value
 		const poisoned = own.poisonCharges.value > 0
 
-		// Restless cores shiver.
-		const restlessness = this.reducedMotion || poisoned ? 0 : Math.min(1, emissionRate / 3)
-		const shiverX = Math.sin(nowMs / 37 + core.angle * 5) * restlessness * 0.35
-		const shiverY = Math.cos(nowMs / 29 + core.angle * 3) * restlessness * 0.35
-		const position = this.toPixels(core.x + shiverX, core.y + shiverY)
+		// A restless core churns inside and its halo flickers; it does not move.
+		const restlessness = poisoned ? 0 : Math.min(1, emissionRate / 3)
+		const flicker = this.reducedMotion ? 0 : restlessness * (0.5 + 0.5 * Math.sin(nowMs / (95 - 55 * restlessness) + core.angle * 7))
+		const position = this.toPixels(core.x, core.y)
 		const radius = this.coreRadius(core) * this.pixelsPerUnit
 
 		// Halo
 		context.save()
 		context.globalCompositeOperation = "lighter"
 		const halo = context.createRadialGradient(position.x, position.y, radius * 0.6, position.x, position.y, radius * 2.6)
-		halo.addColorStop(0, withAlpha(core.color, poisoned ? 0.12 : 0.26 + 0.2 * restlessness))
+		halo.addColorStop(0, withAlpha(core.color, poisoned ? 0.12 : 0.24 + 0.14 * restlessness + 0.16 * flicker))
 		halo.addColorStop(1, withAlpha(core.color, 0))
 		context.fillStyle = halo
 		context.beginPath()
@@ -385,6 +491,31 @@ export class ReactorView {
 		context.beginPath()
 		context.arc(position.x, position.y, radius, 0, Math.PI * 2)
 		context.fill()
+
+		// Churn: bright cells drifting under the surface, more and faster as the core gets restless.
+		if (restlessness > 0.03) {
+			context.save()
+			context.beginPath()
+			context.arc(position.x, position.y, radius, 0, Math.PI * 2)
+			context.clip()
+			context.globalCompositeOperation = "lighter"
+			const churnTime = this.reducedMotion ? 0 : nowMs / (900 - 600 * restlessness)
+			for (let cellIndex = 0; cellIndex < 5; cellIndex++) {
+				const cellAngle = churnTime * (cellIndex % 2 ? -1 : 1) + cellIndex * 2.4 + core.angle
+				const cellDistance = radius * (0.25 + 0.4 * Math.abs(Math.sin(churnTime * 0.7 + cellIndex * 1.9)))
+				const cellX = position.x + Math.cos(cellAngle) * cellDistance
+				const cellY = position.y + Math.sin(cellAngle) * cellDistance
+				const cellRadius = radius * (0.34 + 0.12 * Math.sin(churnTime * 1.3 + cellIndex))
+				const cell = context.createRadialGradient(cellX, cellY, 0, cellX, cellY, cellRadius)
+				cell.addColorStop(0, `rgba(255, 255, 255, ${0.5 * restlessness})`)
+				cell.addColorStop(1, "rgba(255, 255, 255, 0)")
+				context.fillStyle = cell
+				context.beginPath()
+				context.arc(cellX, cellY, cellRadius, 0, Math.PI * 2)
+				context.fill()
+			}
+			context.restore()
+		}
 
 		if (poisoned) {
 			context.fillStyle = "rgba(4, 26, 37, 0.55)"
@@ -493,6 +624,37 @@ export class ReactorView {
 					context.moveTo(position.x + Math.cos(effect.size) * distance, position.y + Math.sin(effect.size) * distance)
 					context.lineTo(position.x + Math.cos(effect.size) * (distance + 1.6 * this.pixelsPerUnit), position.y + Math.sin(effect.size) * (distance + 1.6 * this.pixelsPerUnit))
 					context.stroke()
+					break
+				}
+
+				case "injection": {
+					const core = effect.core
+					if (!core)
+						break
+					// A short bright bolt from the injector down the rail to wherever the core is now.
+					const startDistance = this.simulation.tuning.railMax + injectorOffset - 2.2
+					// Stops at the core's surface rather than its centre.
+					const endDistance = Math.min(startDistance, core.railPosition + this.coreRadius(core))
+					const headDistance = startDistance + (endDistance - startDistance) * progress
+					const tailDistance = startDistance + (endDistance - startDistance) * Math.max(0, progress - 0.35)
+					const head = this.toPixels(Math.cos(core.angle) * headDistance, Math.sin(core.angle) * headDistance)
+					const tail = this.toPixels(Math.cos(core.angle) * tailDistance, Math.sin(core.angle) * tailDistance)
+					context.globalCompositeOperation = "lighter"
+					const bolt = context.createLinearGradient(tail.x, tail.y, head.x, head.y)
+					bolt.addColorStop(0, "rgba(255, 255, 255, 0)")
+					bolt.addColorStop(1, "rgba(255, 255, 255, 0.95)")
+					context.strokeStyle = bolt
+					context.lineWidth = Math.max(2, 0.55 * this.pixelsPerUnit)
+					context.lineCap = "round"
+					context.beginPath()
+					context.moveTo(tail.x, tail.y)
+					context.lineTo(head.x, head.y)
+					context.stroke()
+					context.lineCap = "butt"
+					context.fillStyle = "rgba(255, 255, 255, 0.95)"
+					context.beginPath()
+					context.arc(head.x, head.y, Math.max(2, 0.5 * this.pixelsPerUnit), 0, Math.PI * 2)
+					context.fill()
 					break
 				}
 
