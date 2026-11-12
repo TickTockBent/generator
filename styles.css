@@ -1,0 +1,446 @@
+/* A reactor pool seen from the gantry, flanked by enamelled control panels. */
+
+:root {
+	--enamel: #d3ded5;
+	--enamel-shade: #bccbc0;
+	--ink: #16282d;
+	--ink-soft: #4a6166;
+	--bakelite: #1c2d31;
+	--pool-deep: #041a25;
+	--pool-light: #e7f5ef;
+	--warn: #a03f1c;
+
+	--display-face: "Barlow Condensed", "Arial Narrow", sans-serif;
+	--text-face: "Barlow Semi Condensed", "Segoe UI", system-ui, sans-serif;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html, body {
+	height: 100%;
+	margin: 0;
+}
+
+body {
+	background: var(--pool-deep);
+	color: var(--ink);
+	font: 400 1rem/1.4 var(--text-face);
+}
+
+.control-room {
+	display: grid;
+	grid-template-columns: minmax(17rem, 21rem) minmax(0, 1fr) minmax(17rem, 21rem);
+	height: 100dvh;
+}
+
+/* --- pool --- */
+
+.pool {
+	position: relative;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.pool-canvas {
+	display: block;
+	width: 100%;
+	height: 100%;
+	touch-action: none;
+}
+
+.readout {
+	position: absolute;
+	top: 1.25rem;
+	left: 1.5rem;
+	color: var(--pool-light);
+	pointer-events: none;
+	text-shadow: 0 1px 12px rgba(2, 20, 30, 0.8);
+}
+
+.readout-energy {
+	font: 600 3.4rem/1 var(--display-face);
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.01em;
+}
+
+.readout-energy-unit {
+	font-size: 0.5em;
+	font-weight: 500;
+	opacity: 0.8;
+}
+
+.readout-rate,
+.readout-bank {
+	margin-top: 0.3rem;
+	font-size: 1.05rem;
+	font-variant-numeric: tabular-nums;
+	opacity: 0.85;
+}
+
+.readout-bank {
+	color: #9be8ff;
+}
+
+.pool-hint {
+	position: absolute;
+	left: 50%;
+	bottom: 1.5rem;
+	transform: translateX(-50%);
+	width: max-content;
+	max-width: calc(100% - 3rem);
+	margin: 0;
+	padding: 0.5rem 0.9rem;
+	border-radius: 2px;
+	background: rgba(4, 26, 37, 0.72);
+	color: var(--pool-light);
+	text-align: center;
+}
+
+.notices {
+	position: absolute;
+	right: 1.25rem;
+	top: 1.25rem;
+	display: grid;
+	gap: 0.5rem;
+	max-width: 20rem;
+}
+
+.notice {
+	margin: 0;
+	padding: 0.55rem 0.8rem;
+	border-left: 3px solid #9be8ff;
+	background: rgba(4, 26, 37, 0.85);
+	color: var(--pool-light);
+}
+
+.start-over {
+	position: absolute;
+	right: 1.25rem;
+	bottom: 1.25rem;
+	padding: 0.3rem 0.6rem;
+	border: 1px solid rgba(231, 245, 239, 0.3);
+	border-radius: 2px;
+	background: transparent;
+	color: rgba(231, 245, 239, 0.65);
+	font: inherit;
+	font-size: 0.9rem;
+	cursor: pointer;
+}
+
+.start-over:hover {
+	border-color: rgba(231, 245, 239, 0.7);
+	color: var(--pool-light);
+}
+
+/* --- panels --- */
+
+.panel {
+	overflow-y: auto;
+	padding: 1.1rem 1.25rem 2rem;
+	background: var(--enamel);
+	background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent 9rem);
+}
+
+.cores-panel {
+	box-shadow: inset -6px 0 10px -8px rgba(6, 30, 40, 0.7);
+}
+
+.works-panel {
+	box-shadow: inset 6px 0 10px -8px rgba(6, 30, 40, 0.7);
+}
+
+.panel-title {
+	margin: 0 0 0.6rem;
+	font: 600 1.55rem/1.1 var(--display-face);
+	letter-spacing: 0.01em;
+}
+
+.panel-empty {
+	margin: 0.75rem 0 0;
+	color: var(--ink-soft);
+}
+
+/* --- core strips --- */
+
+.core-strip {
+	padding: 0.9rem 0 1rem 0.9rem;
+	border-top: 1px solid var(--enamel-shade);
+	border-left: 4px solid var(--core-color);
+	margin-top: 0.9rem;
+}
+
+.core-heading {
+	display: flex;
+	align-items: baseline;
+	gap: 0.5rem;
+}
+
+.core-dot {
+	align-self: center;
+	width: 0.8rem;
+	height: 0.8rem;
+	border-radius: 50%;
+	background: var(--core-color);
+	box-shadow: 0 0 0 1px rgba(22, 40, 45, 0.35);
+}
+
+.core-name {
+	flex: 1;
+	margin: 0;
+	font: 600 1.3rem/1.1 var(--display-face);
+}
+
+.core-mass {
+	font: 600 1.75rem/1 var(--display-face);
+	font-variant-numeric: tabular-nums;
+}
+
+.core-status {
+	margin: 0.15rem 0 0;
+	color: var(--ink-soft);
+	font-variant-numeric: tabular-nums;
+}
+
+/* --- dials (range inputs) --- */
+
+.dial {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 0.1rem 0.5rem;
+	margin-top: 0.7rem;
+}
+
+.dial-caption {
+	font-weight: 500;
+}
+
+.dial-value {
+	font-variant-numeric: tabular-nums;
+}
+
+.dial input[type="range"] {
+	grid-column: 1 / -1;
+	width: 100%;
+	height: 1.5rem;
+	margin: 0;
+	background: transparent;
+	accent-color: var(--bakelite);
+	appearance: none;
+}
+
+.dial input[type="range"]::-webkit-slider-runnable-track {
+	height: 4px;
+	border-radius: 2px;
+	background: var(--ink-soft);
+}
+
+.dial input[type="range"]::-moz-range-track {
+	height: 4px;
+	border-radius: 2px;
+	background: var(--ink-soft);
+}
+
+.dial input[type="range"]::-webkit-slider-thumb {
+	appearance: none;
+	width: 1.15rem;
+	height: 1.15rem;
+	margin-top: calc(2px - 0.575rem);
+	border: 2px solid var(--enamel);
+	border-radius: 50%;
+	background: var(--bakelite);
+}
+
+.dial input[type="range"]::-moz-range-thumb {
+	width: 0.95rem;
+	height: 0.95rem;
+	border: 2px solid var(--enamel);
+	border-radius: 50%;
+	background: var(--bakelite);
+}
+
+/* --- buttons --- */
+
+.action {
+	display: block;
+	width: 100%;
+	margin-top: 0.6rem;
+	padding: 0.45rem 0.7rem;
+	border: 1px solid var(--bakelite);
+	border-radius: 3px;
+	background: var(--bakelite);
+	color: #eef4ee;
+	font: 500 1rem/1.2 var(--text-face);
+	font-variant-numeric: tabular-nums;
+	text-align: left;
+	cursor: pointer;
+}
+
+.action:hover:not(:disabled) {
+	background: #0f1c1f;
+}
+
+.action:active:not(:disabled) {
+	transform: translateY(1px);
+}
+
+.action:disabled {
+	border-style: dashed;
+	border-color: var(--ink-soft);
+	background: transparent;
+	color: var(--ink-soft);
+	cursor: default;
+}
+
+.action.quiet {
+	background: transparent;
+	color: var(--ink);
+}
+
+.action.quiet:hover:not(:disabled) {
+	background: rgba(22, 40, 45, 0.08);
+}
+
+:focus-visible {
+	outline: 2px solid #0b6f8f;
+	outline-offset: 2px;
+}
+
+/* --- equipment --- */
+
+.equipment {
+	margin-top: 0.9rem;
+	padding-top: 0.7rem;
+	border-top: 1px dotted var(--ink-soft);
+}
+
+.equipment-title {
+	display: flex;
+	justify-content: space-between;
+	gap: 0.5rem;
+}
+
+.equipment-state {
+	color: var(--ink-soft);
+	font-variant-numeric: tabular-nums;
+}
+
+.equipment-description,
+.upgrade-description {
+	margin: 0.15rem 0 0;
+	color: var(--ink-soft);
+	font-size: 0.94rem;
+}
+
+.wear {
+	height: 5px;
+	margin-top: 0.5rem;
+	border-radius: 3px;
+	background: var(--enamel-shade);
+}
+
+.wear-fill {
+	height: 100%;
+	border-radius: 3px;
+	background: var(--bakelite);
+}
+
+/* --- upgrades --- */
+
+.figures {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 0.15rem 1rem;
+	margin: 0 0 0.4rem;
+	padding-bottom: 0.8rem;
+	font-variant-numeric: tabular-nums;
+}
+
+.figures dt {
+	color: var(--ink-soft);
+}
+
+.figures dd {
+	margin: 0;
+	font-weight: 500;
+	text-align: right;
+}
+
+.upgrade {
+	padding: 0.9rem 0 1rem;
+	border-top: 1px solid var(--enamel-shade);
+}
+
+.upgrade-heading {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.5rem;
+}
+
+.upgrade-name {
+	margin: 0;
+	font: 600 1.3rem/1.1 var(--display-face);
+}
+
+.upgrade-level {
+	color: var(--ink-soft);
+	font-variant-numeric: tabular-nums;
+}
+
+.needs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.3rem 0.9rem;
+	margin: 0.5rem 0 0;
+	padding: 0;
+	list-style: none;
+	font-variant-numeric: tabular-nums;
+}
+
+.needs li::before {
+	content: "✓ ";
+}
+
+.needs li.unmet {
+	color: var(--warn);
+	font-weight: 500;
+}
+
+.needs li.unmet::before {
+	content: "✗ ";
+}
+
+[hidden] {
+	display: none !important;
+}
+
+/* --- narrow screens: pool on top, panels below --- */
+
+@media (max-width: 62rem) {
+	.control-room {
+		grid-template-columns: 1fr;
+		height: auto;
+	}
+
+	.pool {
+		order: -1;
+		height: min(100vw, 78dvh);
+	}
+
+	.panel {
+		overflow: visible;
+		box-shadow: none;
+	}
+
+	.readout-energy {
+		font-size: 2.5rem;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.action:active:not(:disabled) {
+		transform: none;
+	}
+}
