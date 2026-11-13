@@ -2,7 +2,8 @@
 
 import type { Core, GameAction, Particle, SimObject, Simulation } from "./engine.ts"
 
-export type ObjectKind = "resource" | "stat" | "upgrade" | "equipment" | "core"
+/** "repair" brings a part of the station back; "refinement" is an upgrade paid for in Pale. */
+export type ObjectKind = "resource" | "stat" | "upgrade" | "refinement" | "repair" | "equipment" | "core"
 
 /** Objects a value/reveal function may read, keyed by the name it declared ("self" is always present). */
 export type Dependencies = Record<string, SimObject>
@@ -41,6 +42,10 @@ export interface ObjectDefinition {
 	revealWhen? : (dependencies : Dependencies, self : SimObject) => boolean
 	/** ...or when every listed object holds at least the listed amount. */
 	revealAt? : Record<string, number>
+	/** Name of an object that must be above zero before this can be revealed at all (a repair, usually). */
+	revealAfter? : string
+	/** Survives the end of a shift. */
+	permanent? : boolean
 	/** Must be held, but is not spent. */
 	requirements? : CostTable
 	cost? : CostTable
@@ -77,10 +82,39 @@ export interface Tuning {
 	autoSaveTicks : number
 	/** Ticks an injected particle takes to reach its core. */
 	injectionTicks : number
+	/** Pale per landing, before mass and accord are applied. */
+	paleScale : number
+}
+
+/** One step of the story: something to do, and what is found when it is done. */
+export interface StoryBeat {
+	id : string
+	/** Shown as the current objective. */
+	objective : string
+	isDone(simulation : Simulation) : boolean
+	/** Logbook entry found on completion. */
+	entry : LogEntry
+}
+
+export interface LogEntry {
+	title : string
+	/** Who wrote it: a person's notes, or the plant's own terse records. */
+	voice : "notes" | "plant"
+	body : string
+}
+
+/** An explanation of how something works, filed in the notebook once the player has met it. */
+export interface NoteDefinition {
+	id : string
+	title : string
+	body : string
+	isKnown(simulation : Simulation) : boolean
 }
 
 export interface GameContent {
 	tuning : Tuning
+	story : StoryBeat[]
+	notes : NoteDefinition[]
 	resources : ObjectDefinition[]
 	/** Templates instantiated once per core as `<core><Name>`. */
 	coreResources : ObjectDefinition[]
@@ -119,12 +153,22 @@ export interface SimulationListener {
 	emissionAbsorbed?(core : Core) : void
 	equipmentBroke?(core : Core, equipment : GameAction) : void
 	notification?(kind : string, header : string, text : string) : void
+	/** A story beat was completed. `firstTime` is false on later shifts, when the entry is already in the logbook. */
+	storyAdvanced?(beat : StoryBeat, firstTime : boolean) : void
+	noteDiscovered?(note : NoteDefinition) : void
+	/** Pale settled in the centre well. */
+	paleSettled?(amount : number) : void
 }
 
-export const saveVersion = 4
+export const saveVersion = 5
 
 export interface SaveData {
 	version : number
 	time : number
 	objects : Record<string, Record<string, number | boolean>>
+	/** Index of the current story beat this shift. */
+	story : number
+	/** Beats ever completed and notes ever discovered; kept across shifts. */
+	entries : string[]
+	notes : string[]
 }

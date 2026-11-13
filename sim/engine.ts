@@ -9,6 +9,8 @@ import {
 	type CoreDefinition,
 	type Dependencies,
 	type GameContent,
+	type NoteDefinition,
+	type StoryBeat,
 	type ObjectDefinition,
 	type ObjectKind,
 	type SaveData,
@@ -39,6 +41,13 @@ interface EngineObjects {
 	particleSpeed : SimObject
 	capStep : SimObject
 	railSpeed : SimObject
+	injectionMass : SimObject
+	energyBonus : SimObject
+	accord : SimObject
+	paleGain : SimObject
+	pale : Resource
+	railRepair : SimObject
+	wellRepair : SimObject
 }
 
 // ------------------------------------------------------------------------------------
@@ -62,6 +71,12 @@ export class Simulation {
 	particles = new Set<Particle>()
 	cores : Core[] = []
 	engine! : EngineObjects
+
+	/** Index into the story of the beat currently being worked on. */
+	storyIndex = 0
+	/** Ids of every beat ever completed and every note ever discovered. Kept across shifts. */
+	knownEntries = new Set<string>()
+	knownNotes = new Set<string>()
 
 	private objects : Map<string, SimObject> | undefined
 	private tickRemainderMs = 0
@@ -122,6 +137,17 @@ export class Simulation {
 		return found
 	}
 
+	/** True if the named object exists and is above zero: a repair made, an upgrade owned. */
+	has(name : string) : boolean {
+		const found = this.find(name)
+		return found !== undefined && found.value > 0
+	}
+
+	/** The story beat being worked on, or undefined once the story is finished for this shift. */
+	get currentBeat() : StoryBeat | undefined {
+		return this.content.story[this.storyIndex]
+	}
+
 	distanceBetween(firstCore : Core, secondCore : Core) : number {
 		return Math.hypot(firstCore.x - secondCore.x, firstCore.y - secondCore.y)
 	}
@@ -152,7 +178,18 @@ export class Simulation {
 			particleSpeed : this.object("particleSpeed"),
 			capStep : this.object("capStep"),
 			railSpeed : this.object("railSpeed"),
+			injectionMass : this.object("injectionMass"),
+			energyBonus : this.object("energyBonus"),
+			accord : this.object("accord"),
+			paleGain : this.object("paleGain"),
+			pale : this.resource("pale"),
+			railRepair : this.object("railRepair"),
+			wellRepair : this.object("wellRepair"),
 		}
+
+		this.storyIndex = saveData ? saveData.story : 0
+		this.knownEntries = new Set(saveData ? saveData.entries : [])
+		this.knownNotes = new Set(saveData ? saveData.notes : [])
 
 		if (saveData) {
 			for (const object of this.objects.values()) {
@@ -184,6 +221,8 @@ export class Simulation {
 				return new Stat(definition, this, coreDefinition)
 
 			case "upgrade":
+			case "refinement":
+			case "repair":
 			case "equipment":
 				return new GameAction(definition, this, coreDefinition)
 
@@ -241,6 +280,7 @@ export class Simulation {
 			const definition = object.definition
 			const dependencyNames = [
 				...(definition.dependencies || []),
+				...(definition.revealAfter ? [definition.revealAfter] : []),
 				...Object.keys(definition.revealAt || {}),
 				...Object.keys(definition.requirements || {}),
 				...Object.keys(definition.cost || {}),
@@ -307,6 +347,9 @@ export class Simulation {
 			version : saveVersion,
 			time : this.host.now(),
 			objects,
+			story : this.storyIndex,
+			entries : [...this.knownEntries],
+			notes : [...this.knownNotes],
 		}
 
 		this.host.storage.set(slot, compressSave(JSON.stringify(saveData)))
@@ -358,6 +401,7 @@ export class Simulation {
 			this.ticksSinceRateMeasure = 0
 			for (const object of this.data.values())
 				object.measureChange(1)
+			this.advanceStory()
 		}
 
 		if (++this.ticksSinceSave >= this.tuning.autoSaveTicks) {
@@ -365,6 +409,50 @@ export class Simulation {
 			if (this.autoSaveSlot)
 				this.save(this.autoSaveSlot)
 		}
+	}
+
+	/** Completes story beats whose conditions are met and files any notes the player has now earned. Checked once a second. */
+	advanceStory() {
+		let beat = this.currentBeat
+		while (beat && beat.isDone(this)) {
+			const firstTime = !this.knownEntries.has(beat.id)
+			this.knownEntries.add(beat.id)
+			this.storyIndex++
+			this.listener.storyAdvanced?.(beat, firstTime)
+			beat = this.currentBeat
+		}
+
+		for (const note of this.content.notes) {
+			if (!this.knownNotes.has(note.id) && note.isKnown(this)) {
+				this.knownNotes.add(note.id)
+				this.listener.noteDiscovered?.(note)
+			}
+		}
+	}
+
+	/** Ends the shift: the pool starts over, but permanent objects and everything in the logbook are kept. */
+	startNextShift() {
+		const permanentValues = [...this.data.values()]
+			.filter(object => object.definition.permanent)
+			.map(object => ({ name : object.name, value : object.value, seen : object.seen }))
+		const knownEntries = this.knownEntries
+		const knownNotes = this.knownNotes
+
+		this.reset()
+
+		for (const { name, value, seen } of permanentValues) {
+			const object = this.object(name)
+			object.seen = seen
+			if (object instanceof Resource)
+				object.set(value)
+		}
+		this.resource("shifts").add(1)
+		this.knownEntries = knownEntries
+		this.knownNotes = knownNotes
+		this.update()
+
+		if (this.autoSaveSlot)
+			this.save(this.autoSaveSlot)
 	}
 
 	/** Recomputes every object whose inputs changed, until nothing more changes. */
@@ -450,7 +538,7 @@ export class Particle {
 		this.length = this.cumulativeLength[this.cumulativeLength.length - 1]
 
 		// Energy comes from mass in flight: it is earned per unit of distance, and faster particles earn more.
-		this.energyPerDistance = simulation.tuning.energyScale * this.mass * this.yieldFactor * this.speed
+		this.energyPerDistance = simulation.tuning.energyScale * simulation.engine.energyBonus.value * this.mass * this.yieldFactor * this.speed
 	}
 
 	/** A cubic Bézier between the two cores with randomly swung handles, so no two flights are the same length. */
@@ -632,9 +720,10 @@ export abstract class SimObject {
 		if (definition.valueFunction)
 			this.value = definition.valueFunction(this.dependencies, this)
 
-		if (!this.seen && (
+		if (!this.seen && (!definition.revealAfter || this.simulation.has(definition.revealAfter)) && (
 			definition.revealWhen && definition.revealWhen(this.dependencies, this) ||
-			definition.revealAt && this.simulation.checkResources(definition.revealAt)
+			definition.revealAt && this.simulation.checkResources(definition.revealAt) ||
+			!definition.revealWhen && !definition.revealAt && definition.revealAfter !== undefined
 		))
 			this.seen = true
 
@@ -733,6 +822,9 @@ export class Core extends Resource {
 
 	/** Ask the core to travel to a rail position; it gets there at rail speed. */
 	setRailTarget(position : number) {
+		if (this.simulation.engine.railRepair.value <= 0)
+			return
+
 		const tuning = this.simulation.tuning
 		this.railTarget = Math.min(tuning.railMax, Math.max(tuning.railMin, position))
 	}
@@ -746,7 +838,7 @@ export class Core extends Resource {
 	/** Fire a particle into the core. When it arrives it knocks one out towards the next core. */
 	fire() : boolean {
 		const simulation = this.simulation
-		const massSpokenFor = (this.pendingInjections.length + 1) * simulation.engine.emissionMass.value
+		const massSpokenFor = (this.pendingInjections.length + 1) * simulation.engine.injectionMass.value
 
 		if (this.value < massSpokenFor)
 			return false
@@ -813,7 +905,7 @@ export class Core extends Resource {
 
 	private shoot(manual : boolean) : boolean {
 		const simulation = this.simulation
-		const mass = simulation.engine.emissionMass.value
+		const mass = manual ? simulation.engine.injectionMass.value : simulation.engine.emissionMass.value
 
 		if (this.value < mass)
 			return false
@@ -848,6 +940,17 @@ export class Core extends Resource {
 		newValue += remainingMass * massCap(particle.yieldFactor, newValue, capStep)
 
 		this.add(newValue - this.value)
+
+		// With the centre well open, each landing settles some Pale: more the heavier the particle,
+		// far more the closer the three cores are to weighing the same.
+		const engine = this.simulation.engine
+		if (engine.wellRepair.value > 0) {
+			const settled = this.simulation.tuning.paleScale * Math.sqrt(particle.mass) * engine.accord.value ** 2 * engine.paleGain.value
+			if (settled > 0) {
+				engine.pale.add(settled)
+				this.simulation.listener.paleSettled?.(settled)
+			}
+		}
 	}
 
 	protected override onLoad() {

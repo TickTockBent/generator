@@ -30,8 +30,8 @@ const poolGlowColor = "#59dcff"
 const railInk = "rgba(190, 232, 240, 0.5)"
 const tapSlopPixels = 7
 const maximumEffects = 160
-/** How far past the end of its rail a core's injector sits, in rail units. */
-const injectorOffset = 5
+/** How far past the end of its rail a core's injector sits, in rail units. Clears the largest core parked at the end stop. */
+const injectorOffset = 14
 
 export class ReactorView {
 	private readonly canvas : HTMLCanvasElement
@@ -49,10 +49,9 @@ export class ReactorView {
 	private activity = 0
 	private recentLandings = 0
 	private lastFrameMs = 0
-
-	/** Called the first time the player drags a core, and the first time they fire one. */
-	onFirstDrag : (() => void) | undefined
-	onFirstFire : (() => void) | undefined
+	/** Pale settled since the last pulse was drawn at the well. */
+	private unshownPale = 0
+	private lastPalePulseMs = 0
 
 	constructor(canvas : HTMLCanvasElement, simulation : Simulation) {
 		this.canvas = canvas
@@ -94,6 +93,10 @@ export class ReactorView {
 
 		if (particle.manual || this.simulation.particles.size < 12)
 			this.addEffect({ kind : "text", x : target.x, y : target.y - this.coreRadius(target) - 1.5, color : "#eaf6f1", ageMs : 0, lifeMs : 1100, size : 4, text : `+${formatEnergy(particle.energyProduced)}` })
+	}
+
+	paleSettled(amount : number) {
+		this.unshownPale += amount
 	}
 
 	emissionAbsorbed(core : Core) {
@@ -173,7 +176,6 @@ export class ReactorView {
 
 		if (!drag.moved && Math.hypot(event.offsetX - drag.startX, event.offsetY - drag.startY) > tapSlopPixels) {
 			drag.moved = true
-			this.onFirstDrag?.()
 		}
 
 		if (drag.moved) {
@@ -192,8 +194,7 @@ export class ReactorView {
 		this.canvas.style.cursor = "grab"
 
 		if (drag && !drag.moved && drag.pointerId == event.pointerId) {
-			if (drag.core.fire())
-				this.onFirstFire?.()
+			drag.core.fire()
 		}
 	}
 
@@ -213,6 +214,7 @@ export class ReactorView {
 
 		this.drawPool()
 		this.drawRails()
+		this.drawWell(nowMs)
 		this.drawCoupling(nowMs)
 		this.drawParticles()
 		for (const core of this.simulation.cores)
@@ -234,6 +236,53 @@ export class ReactorView {
 		context.fillRect(0, 0, this.widthPixels, this.heightPixels)
 
 		this.drawZones()
+
+		// Before the lights are restored the floor is barely visible; only the cores glow.
+		if (!this.simulation.has("lightsRepair")) {
+			context.fillStyle = "rgba(1, 8, 12, 0.78)"
+			context.fillRect(0, 0, this.widthPixels, this.heightPixels)
+		}
+	}
+
+	/** The centre well: a dark drain that fills with white as the three cores come into accord. */
+	private drawWell(nowMs : number) {
+		if (!this.simulation.has("wellRepair"))
+			return
+
+		const context = this.context
+		const centre = this.centre
+		const accord = this.simulation.engine.accord.value
+		const wellRadius = this.simulation.tuning.railMin * 0.36 * this.pixelsPerUnit
+
+		context.fillStyle = "rgba(1, 10, 15, 0.9)"
+		context.beginPath()
+		context.arc(centre.x, centre.y, wellRadius, 0, Math.PI * 2)
+		context.fill()
+
+		context.save()
+		context.globalCompositeOperation = "lighter"
+		const breathing = this.reducedMotion ? 1 : 0.9 + 0.1 * Math.sin(nowMs / 900)
+		const glow = context.createRadialGradient(centre.x, centre.y, 0, centre.x, centre.y, wellRadius * (1.2 + 2.2 * accord))
+		glow.addColorStop(0, `rgba(255, 255, 255, ${0.95 * accord ** 2 * breathing})`)
+		glow.addColorStop(0.35, `rgba(235, 248, 255, ${0.45 * accord ** 2 * breathing})`)
+		glow.addColorStop(1, "rgba(235, 248, 255, 0)")
+		context.fillStyle = glow
+		context.beginPath()
+		context.arc(centre.x, centre.y, wellRadius * (1.2 + 2.2 * accord), 0, Math.PI * 2)
+		context.fill()
+		context.restore()
+
+		context.strokeStyle = "rgba(225, 245, 250, 0.55)"
+		context.lineWidth = 1.5
+		context.beginPath()
+		context.arc(centre.x, centre.y, wellRadius, 0, Math.PI * 2)
+		context.stroke()
+
+		if (this.unshownPale > 0 && nowMs - this.lastPalePulseMs > 220) {
+			this.lastPalePulseMs = nowMs
+			this.unshownPale = 0
+			this.addEffect({ kind : "ring", x : 0, y : 0, color : "#ffffff", ageMs : 0, lifeMs : 700, size : this.simulation.tuning.railMin * 0.9 })
+		}
 	}
 
 	/** The pool floor: nested triangles pointing down each rail, split into one zone per core. */
@@ -301,7 +350,8 @@ export class ReactorView {
 			const acrossX = -Math.sin(core.angle)
 			const acrossY = Math.cos(core.angle)
 			const labelDistance = tuning.railMax - 3
-			const label = this.toPixels(Math.cos(core.angle) * labelDistance + acrossX * 5, Math.sin(core.angle) * labelDistance + acrossY * 5)
+			// Far enough to the side that the largest core never covers it.
+			const label = this.toPixels(Math.cos(core.angle) * labelDistance + acrossX * 13, Math.sin(core.angle) * labelDistance + acrossY * 13)
 			context.textAlign = acrossX > 0.3 ? "left" : acrossX < -0.3 ? "right" : "left"
 			context.fillStyle = withAlpha(core.color, 0.7)
 			context.fillText(core.definition.displayName ?? core.name, label.x, label.y)
@@ -317,7 +367,8 @@ export class ReactorView {
 			const along = { x : Math.cos(core.angle), y : Math.sin(core.angle) }
 			const across = { x : -along.y, y : along.x }
 
-			context.strokeStyle = railInk
+			const railsPowered = this.simulation.has("railRepair")
+			context.strokeStyle = railsPowered ? railInk : "rgba(190, 232, 240, 0.16)"
 			context.lineWidth = 1.2
 			for (const side of [-1, 1]) {
 				const start = this.toPixels(along.x * tuning.railMin + across.x * gauge * side, along.y * tuning.railMin + across.y * gauge * side)
@@ -342,7 +393,17 @@ export class ReactorView {
 				context.stroke()
 			}
 
-			// The injector: fires particles down the rail into the core.
+			// The injector: fires particles down the rail into the core. A feed line joins it to the end stop.
+			const feedStart = this.toPixels(along.x * tuning.railMax, along.y * tuning.railMax)
+			const feedEnd = this.toPixels(along.x * (tuning.railMax + injectorOffset - 2.2), along.y * (tuning.railMax + injectorOffset - 2.2))
+			context.strokeStyle = "rgba(190, 232, 240, 0.22)"
+			context.lineWidth = 1
+			context.setLineDash([2, 4])
+			context.beginPath()
+			context.moveTo(feedStart.x, feedStart.y)
+			context.lineTo(feedEnd.x, feedEnd.y)
+			context.stroke()
+			context.setLineDash([])
 			const nozzleTip = this.toPixels(along.x * (tuning.railMax + injectorOffset - 2.2), along.y * (tuning.railMax + injectorOffset - 2.2))
 			const nozzleBackLeft = this.toPixels(along.x * (tuning.railMax + injectorOffset) - across.x * 1.7, along.y * (tuning.railMax + injectorOffset) - across.y * 1.7)
 			const nozzleBackRight = this.toPixels(along.x * (tuning.railMax + injectorOffset) + across.x * 1.7, along.y * (tuning.railMax + injectorOffset) + across.y * 1.7)
@@ -383,7 +444,7 @@ export class ReactorView {
 			for (let secondIndex = firstIndex + 1; secondIndex < cores.length; secondIndex++) {
 				const firstCore = cores[firstIndex]
 				const secondCore = cores[secondIndex]
-				const strength = Math.exp(-this.simulation.distanceBetween(firstCore, secondCore) / 22)
+				const strength = Math.exp(-this.simulation.distanceBetween(firstCore, secondCore) / this.simulation.object("couplingRange").value)
 				if (strength < 0.03)
 					continue
 

@@ -1,6 +1,6 @@
 // Shared test setup: a simulation with seeded randomness, a settable clock and in-memory storage.
 
-import { createSeededRandom, gameContent, Simulation, type Core, type GameAction, type Particle, type SimulationListener } from "../sim/index.ts"
+import { createSeededRandom, gameContent, Simulation, type Core, type GameAction, type Particle, type SimulationListener, type StoryBeat } from "../sim/index.ts"
 
 export interface TestWorld {
 	simulation : Simulation
@@ -12,16 +12,22 @@ export interface TestWorld {
 		absorbed : Core[]
 		broke : GameAction[]
 		notifications : string[]
+		beats : Array<{ beat : StoryBeat, firstTime : boolean }>
+		notes : string[]
 	}
 	/** Advance simulated time in frames of `frameMs` (default one tick). */
 	run(seconds : number, frameMs? : number) : void
 }
 
-export function createTestWorld(seed = 1, existingSlots? : Map<string, string>, startMs = Date.UTC(2026, 0, 1)) : TestWorld {
+/** Repairs most tests want already made, so the rails, workshop and stores are usable. */
+export const workingStation = ["lightsRepair", "railRepair", "instrumentsRepair", "workshopRepair", "storesRepair"]
+
+/** `coldStart` leaves the station as a new player finds it: nothing repaired. */
+export function createTestWorld(seed = 1, existingSlots? : Map<string, string>, startMs = Date.UTC(2026, 0, 1), coldStart = false) : TestWorld {
 	const seededRandom = createSeededRandom(seed)
 	const clock = { nowMs : startMs }
 	const slots = existingSlots ?? new Map<string, string>()
-	const events : TestWorld["events"] = { spawned : [], landed : [], absorbed : [], broke : [], notifications : [] }
+	const events : TestWorld["events"] = { spawned : [], landed : [], absorbed : [], broke : [], notifications : [], beats : [], notes : [] }
 
 	const listener : SimulationListener = {
 		particleSpawned : particle => { events.spawned.push(particle) },
@@ -29,6 +35,8 @@ export function createTestWorld(seed = 1, existingSlots? : Map<string, string>, 
 		emissionAbsorbed : core => { events.absorbed.push(core) },
 		equipmentBroke : (_core, equipment) => { events.broke.push(equipment) },
 		notification : kind => { events.notifications.push(kind) },
+		storyAdvanced : (beat, firstTime) => { events.beats.push({ beat, firstTime }) },
+		noteDiscovered : note => { events.notes.push(note.id) },
 	}
 
 	const simulation = new Simulation(gameContent, {
@@ -39,6 +47,12 @@ export function createTestWorld(seed = 1, existingSlots? : Map<string, string>, 
 			set : (slot, value) => { slots.set(slot, value) },
 		},
 	}, { autoSaveSlot : "autoSave", listener })
+
+	if (!coldStart) {
+		for (const repairName of workingStation)
+			simulation.action(repairName).buy(true)
+		simulation.update()
+	}
 
 	return {
 		simulation, clock, slots, events,

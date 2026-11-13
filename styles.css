@@ -83,21 +83,6 @@ body {
 	color: #9be8ff;
 }
 
-.pool-hint {
-	position: absolute;
-	left: 50%;
-	bottom: 4.25rem;
-	transform: translateX(-50%);
-	width: max-content;
-	max-width: min(34rem, calc(100% - 3rem));
-	margin: 0;
-	padding: 0.5rem 0.9rem;
-	border-radius: 2px;
-	background: rgba(4, 26, 37, 0.72);
-	color: var(--pool-light);
-	text-align: center;
-}
-
 .notices {
 	position: absolute;
 	right: 1.25rem;
@@ -115,23 +100,251 @@ body {
 	color: var(--pool-light);
 }
 
-.start-over {
+.pool-buttons {
 	position: absolute;
+	left: 1.25rem;
 	right: 1.25rem;
 	bottom: 1.25rem;
-	padding: 0.3rem 0.6rem;
+	display: flex;
+	justify-content: space-between;
+	gap: 0.75rem;
+	pointer-events: none;
+}
+
+.pool-buttons button {
+	padding: 0.35rem 0.7rem;
 	border: 1px solid rgba(231, 245, 239, 0.3);
 	border-radius: 2px;
-	background: transparent;
-	color: rgba(231, 245, 239, 0.65);
+	background: rgba(4, 26, 37, 0.6);
+	color: rgba(231, 245, 239, 0.75);
 	font: inherit;
-	font-size: 0.9rem;
+	font-size: 0.95rem;
+	cursor: pointer;
+	pointer-events: auto;
+}
+
+.pool-buttons button:hover {
+	border-color: rgba(231, 245, 239, 0.7);
+	color: var(--pool-light);
+}
+
+.pool-buttons .start-over {
+	margin-left: auto;
+}
+
+.readout-pale {
+	margin-top: 0.3rem;
+	color: #ffffff;
+	font-size: 1.05rem;
+	font-variant-numeric: tabular-nums;
+}
+
+/* --- a page found: shown once over the pool --- */
+
+.page-card {
+	position: absolute;
+	left: 50%;
+	bottom: 4.5rem;
+	transform: translateX(-50%) rotate(-0.6deg);
+	width: min(27rem, calc(100% - 2.5rem));
+	max-height: 62%;
+	overflow-y: auto;
+	padding: 1.1rem 1.3rem 1rem;
+	background: #efe9d6;
+	color: #2a2a22;
+	box-shadow: 0 14px 40px rgba(0, 8, 12, 0.6), 0 1px 0 rgba(255, 255, 255, 0.5) inset;
+	animation: page-arrives 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.page-card.plant {
+	transform: translateX(-50%);
+	background: #10262e;
+	color: #bfeef2;
+	border: 1px solid rgba(155, 232, 255, 0.4);
+	font-variant-numeric: tabular-nums;
+}
+
+.page-title {
+	margin: 0 0 0.6rem;
+	font: 500 0.95rem/1.2 var(--text-face);
+	opacity: 0.65;
+}
+
+.page-body p,
+.logbook-entry p {
+	margin: 0 0 0.7rem;
+}
+
+.page-card.notes .page-body,
+.logbook-entry.notes p {
+	font-style: italic;
+	font-size: 1.08rem;
+	line-height: 1.45;
+}
+
+.page-keep {
+	display: block;
+	margin: 0.4rem 0 0 auto;
+	padding: 0.35rem 0.8rem;
+	border: 1px solid currentColor;
+	border-radius: 2px;
+	background: transparent;
+	color: inherit;
+	font: 500 0.95rem/1.2 var(--text-face);
 	cursor: pointer;
 }
 
-.start-over:hover {
-	border-color: rgba(231, 245, 239, 0.7);
+@keyframes page-arrives {
+	from {
+		opacity: 0;
+		translate: 0 1.5rem;
+	}
+}
+
+/* --- logbook --- */
+
+.logbook {
+	width: min(60rem, calc(100vw - 2rem));
+	height: min(44rem, calc(100dvh - 2rem));
+	padding: 0;
+	border: none;
+	border-radius: 3px;
+	background: #efe9d6;
+	color: #2a2a22;
+	font: 400 1rem/1.4 var(--text-face);
+}
+
+.logbook[open] {
+	display: flex;
+	flex-direction: column;
+}
+
+.logbook::backdrop {
+	background: rgba(2, 14, 20, 0.72);
+}
+
+.logbook-heading {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	padding: 1rem 1.4rem 0.7rem;
+	border-bottom: 1px solid #cfc7ac;
+}
+
+.logbook-heading h1 {
+	margin: 0;
+	font: 600 1.7rem/1.1 var(--display-face);
+}
+
+.logbook-close {
+	padding: 0.3rem 0.7rem;
+	border: 1px solid #2a2a22;
+	border-radius: 2px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+
+.logbook-columns {
+	display: grid;
+	grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+	flex: 1;
+	min-height: 0;
+}
+
+.logbook-pages,
+.logbook-notes {
+	overflow-y: auto;
+	padding: 1rem 1.4rem 1.5rem;
+}
+
+.logbook-notes {
+	border-left: 1px solid #cfc7ac;
+	background: #e6dfc9;
+}
+
+.logbook-section {
+	margin: 0 0 0.8rem;
+	font: 600 1.2rem/1.1 var(--display-face);
+}
+
+.logbook-entry {
+	padding: 0.9rem 0 0.4rem;
+	border-top: 1px solid #cfc7ac;
+}
+
+.logbook-entry h2,
+.logbook-note h3 {
+	margin: 0 0 0.45rem;
+	font: 500 0.95rem/1.2 var(--text-face);
+	opacity: 0.65;
+}
+
+.logbook-entry.plant p {
+	padding: 0.6rem 0.8rem;
+	background: #10262e;
+	color: #bfeef2;
+	font-variant-numeric: tabular-nums;
+}
+
+.logbook-note {
+	padding: 0.7rem 0 0.2rem;
+	border-top: 1px dotted #a89f82;
+}
+
+.logbook-note h3 {
+	opacity: 1;
+	font-weight: 600;
+}
+
+.logbook-note p {
+	margin: 0 0 0.5rem;
+}
+
+/* --- title and end-of-shift cards --- */
+
+.curtain {
+	position: fixed;
+	inset: 0;
+	z-index: 10;
+	display: grid;
+	place-items: center;
+	padding: 1.5rem;
+	background: radial-gradient(circle at 50% 42%, rgba(9, 52, 70, 0.9), rgba(2, 12, 18, 0.97) 70%);
 	color: var(--pool-light);
+}
+
+.curtain-card {
+	width: min(30rem, 100%);
+}
+
+.curtain-title {
+	margin: 0 0 1.2rem;
+	font: 600 clamp(3rem, 12vw, 5.5rem)/0.95 var(--display-face);
+	letter-spacing: 0.01em;
+}
+
+.curtain-card p {
+	margin: 0 0 0.8rem;
+	font-size: 1.15rem;
+	line-height: 1.45;
+	opacity: 0.88;
+}
+
+.curtain-button {
+	margin-top: 1.1rem;
+	padding: 0.6rem 1.1rem;
+	border: 1px solid var(--pool-light);
+	border-radius: 3px;
+	background: var(--pool-light);
+	color: #06202b;
+	font: 600 1.05rem/1.2 var(--text-face);
+	cursor: pointer;
+}
+
+.curtain-button:hover {
+	background: #ffffff;
 }
 
 /* --- panels --- */
@@ -160,6 +373,61 @@ body {
 .panel-empty {
 	margin: 0.75rem 0 0;
 	color: var(--ink-soft);
+}
+
+.objective {
+	margin: 0 0 1.1rem;
+	padding: 0.7rem 0.9rem;
+	border-left: 4px solid var(--bakelite);
+	background: rgba(255, 255, 255, 0.34);
+}
+
+.objective-caption {
+	color: var(--ink-soft);
+	font-size: 0.94rem;
+}
+
+.objective-text {
+	margin: 0.1rem 0 0;
+	font: 600 1.3rem/1.15 var(--display-face);
+}
+
+.works-section {
+	margin-bottom: 1.4rem;
+}
+
+.works-section .upgrade:first-of-type {
+	border-top: none;
+	padding-top: 0.2rem;
+}
+
+.works-done {
+	margin: 0.6rem 0 0;
+	color: var(--ink-soft);
+	font-size: 0.94rem;
+}
+
+/* Before the lights are restored the panels sit in the dark. */
+.panel {
+	transition: background-color 1.4s ease, color 1.4s ease;
+}
+
+.control-room.unlit .panel {
+	--enamel: #0c1f27;
+	--enamel-shade: #17313a;
+	--ink: #8fb0b5;
+	--ink-soft: #5d7d83;
+	--bakelite: #86a9ae;
+	background-image: none;
+	color: var(--ink);
+}
+
+.control-room.unlit .action:not(.quiet):not(:disabled) {
+	color: #06202b;
+}
+
+.control-room.unlit .objective {
+	background: rgba(255, 255, 255, 0.05);
 }
 
 /* --- core strips --- */
@@ -443,9 +711,32 @@ body {
 	.readout-energy {
 		font-size: 2.5rem;
 	}
+
+	.logbook-columns {
+		grid-template-columns: 1fr;
+		overflow-y: auto;
+	}
+
+	.logbook-pages,
+	.logbook-notes {
+		overflow: visible;
+	}
+
+	.logbook-notes {
+		border-left: none;
+		border-top: 1px solid #cfc7ac;
+	}
 }
 
 @media (prefers-reduced-motion: reduce) {
+	.page-card {
+		animation: none;
+	}
+
+	.panel {
+		transition: none;
+	}
+
 	.action:active:not(:disabled) {
 		transform: none;
 	}

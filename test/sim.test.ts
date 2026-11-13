@@ -283,3 +283,149 @@ test("firing cannot promise more mass than the core holds", () => {
 	assert.equal(alpha.value, 0)
 	assert.equal(alpha.inFlight, 10)
 })
+
+// --- the station, the story, the Pale ---
+
+function coldWorld(seed = 1) {
+	return createTestWorld(seed, undefined, Date.UTC(2026, 0, 1), true)
+}
+
+test("a new station has dead rails and nothing to buy but the lights", () => {
+	const world = coldWorld()
+	const simulation = world.simulation
+	const alpha = simulation.cores[0]
+
+	alpha.setRailTarget(tuning.railMin)
+	world.run(3)
+	assert.equal(alpha.railPosition, tuning.railStart)
+
+	const visible = [...simulation.data.values()].filter(object => object.seen && ["repair", "upgrade", "equipment", "refinement"].includes(object.kind)).map(object => object.name)
+	assert.deepEqual(visible, ["lightsRepair"])
+
+	simulation.action("lightsRepair").buy(true)
+	simulation.action("railRepair").buy(true)
+	alpha.setRailTarget(tuning.railMin)
+	world.run(3)
+	assert.ok(alpha.railPosition < tuning.railStart)
+})
+
+test("repairs reveal the next system in order", () => {
+	const world = coldWorld()
+	const simulation = world.simulation
+	const isSeen = (name : string) => simulation.object(name).seen
+
+	assert.equal(isSeen("railRepair"), false)
+	simulation.action("lightsRepair").buy(true)
+	simulation.update()
+	assert.equal(isSeen("railRepair"), true)
+	assert.equal(isSeen("amplifier"), false)
+
+	for (const repairName of ["railRepair", "instrumentsRepair", "workshopRepair"])
+		simulation.action(repairName).buy(true)
+	simulation.update()
+	assert.equal(isSeen("amplifier"), true)
+	assert.equal(isSeen("alphaReflector"), false)
+
+	simulation.action("storesRepair").buy(true)
+	simulation.update()
+	assert.equal(isSeen("alphaReflector"), true)
+	assert.equal(isSeen("tunedInjectors"), false)
+})
+
+test("the story advances one beat at a time and files each page once", () => {
+	const world = coldWorld()
+	const simulation = world.simulation
+
+	assert.equal(simulation.currentBeat?.id, "firstShot")
+	world.run(2)
+	assert.equal(world.events.beats.length, 0)
+
+	simulation.cores[0].fire()
+	world.run(2)
+	assert.deepEqual(world.events.beats.map(event => event.beat.id), ["firstShot"])
+	assert.equal(world.events.beats[0].firstTime, true)
+	assert.equal(simulation.currentBeat?.id, "lights")
+	assert.ok(world.events.notes.includes("firing"))
+
+	// Two beats satisfied in the same second are both completed, in order.
+	simulation.action("lightsRepair").buy(true)
+	simulation.action("railRepair").buy(true)
+	world.run(2)
+	assert.deepEqual(world.events.beats.map(event => event.beat.id), ["firstShot", "lights", "rails"])
+	assert.equal(simulation.currentBeat?.id, "restless")
+})
+
+test("Pale settles only with the well open, and far more when the cores weigh the same", () => {
+	const paleAfter = (wellOpen : boolean, masses : number[]) => {
+		const world = createTestWorld(13)
+		const simulation = world.simulation
+		if (wellOpen)
+			simulation.action("wellRepair").buy(true)
+		simulation.cores.forEach((core, coreIndex) => core.set(masses[coreIndex]))
+		simulation.update()
+		for (let shot = 0; shot < 12; shot++)
+			simulation.cores[shot % 3].fire()
+		world.run(15)
+		return simulation.resource("pale").value
+	}
+
+	assert.equal(paleAfter(false, [100, 100, 100]), 0)
+	const balanced = paleAfter(true, [100, 100, 100])
+	const lopsided = paleAfter(true, [100, 100, 25])
+	assert.ok(balanced > 0)
+	assert.ok(lopsided < balanced / 4, `balanced ${balanced}, lopsided ${lopsided}`)
+})
+
+test("the next shift starts cold, doubles energy, and keeps the logbook", () => {
+	const world = createTestWorld(14)
+	const simulation = world.simulation
+	simulation.cores[0].fire()
+	world.run(3)
+	simulation.resource("energy").set(5000)
+	simulation.action("accelerator").buy(true)
+	const knownBefore = [...simulation.knownEntries]
+	assert.ok(knownBefore.length > 0)
+
+	simulation.startNextShift()
+
+	assert.equal(simulation.resource("shifts").value, 1)
+	assert.equal(simulation.resource("energy").value, 0)
+	assert.equal(simulation.action("accelerator").value, 0)
+	assert.equal(simulation.has("lightsRepair"), false)
+	assert.equal(simulation.currentBeat?.id, "firstShot")
+	assert.deepEqual([...simulation.knownEntries], knownBefore)
+	assert.equal(simulation.object("energyBonus").value, 2)
+
+	// A particle now earns exactly twice what its mass, speed and distance would have earned on the first shift.
+	simulation.cores[0].fire()
+	world.run(6)
+	const secondShiftShot = world.events.landed.filter(particle => particle.manual).at(-1)!
+	const firstShiftWorth = tuning.energyScale * secondShiftShot.mass * secondShiftShot.yieldFactor * secondShiftShot.speed * secondShiftShot.length
+	assert.ok(Math.abs(secondShiftShot.energyProduced / firstShiftWorth - 2) < 1e-9)
+	assert.equal(world.events.beats.at(-1)?.firstTime, false)
+
+	// And it survives a save and load.
+	simulation.save("autoSave")
+	const reloaded = createTestWorld(1, world.slots, world.clock.nowMs, true)
+	assert.equal(reloaded.simulation.resource("shifts").value, 1)
+	assert.deepEqual([...reloaded.simulation.knownEntries], [...simulation.knownEntries])
+})
+
+test("the story can be finished, whatever order the station was restored in", () => {
+	const world = coldWorld(15)
+	const simulation = world.simulation
+
+	// Everything at once, out of order, with the Pale spent on the door before it was ever "gathered".
+	for (const repairName of ["doorRepair", "wellRepair", "storesRepair", "workshopRepair", "instrumentsRepair", "railRepair", "lightsRepair"])
+		simulation.action(repairName).buy(true)
+	simulation.action("amplifier").buy(true)
+	for (const core of simulation.cores)
+		core.set(200)
+	simulation.resource("autoEmissions").set(100)
+	simulation.cores[0].fire()
+	world.run(3)
+
+	assert.equal(simulation.currentBeat, undefined)
+	assert.deepEqual(world.events.beats.map(event => event.beat.id), simulation.content.story.map(beat => beat.id))
+	assert.equal(simulation.knownNotes.has("pale"), true)
+})

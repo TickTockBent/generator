@@ -1,4 +1,4 @@
-// The control panels either side of the pool: one strip per core, and the upgrades.
+// The control panels either side of the pool: one strip per core, and the station.
 // Built once per world, then refreshed a few times a second by writing only what changed.
 
 import type { Core, GameAction, SimObject, Simulation } from "../sim/index.ts"
@@ -23,8 +23,15 @@ function setHidden(target : HTMLElement, hidden : boolean) {
 		target.hidden = hidden
 }
 
+function formatMass(mass : number) : string {
+	return formatNumber(mass, mass < 100 ? 1 : 0)
+}
+
+/** "12.0 J", "400 Pale", or "20.0 MJ and 1.20 k Pale". */
 function priceOf(action : GameAction) : string {
-	return formatEnergy(action.calculatedCost.energy ?? 0)
+	const parts = Object.entries(action.calculatedCost).map(([resourceName, amount]) =>
+		resourceName == "energy" ? formatEnergy(amount) : `${formatNumber(amount, 0)} ${action.simulation.object(resourceName).definition.displayName}`)
+	return parts.join(" and ")
 }
 
 /** Something on screen that refreshes itself from the simulation. */
@@ -34,20 +41,24 @@ export class Panels {
 	private simulation : Simulation
 	private refreshers : Refresher[] = []
 
+	private readonly room : HTMLElement
 	private readonly coresRoot : HTMLElement
 	private readonly worksRoot : HTMLElement
 	private readonly energyValue : HTMLElement
 	private readonly energyUnit : HTMLElement
 	private readonly energyRate : HTMLElement
+	private readonly paleLine : HTMLElement
 	private readonly bankLine : HTMLElement
 
 	constructor(page : ParentNode, simulation : Simulation) {
 		this.simulation = simulation
+		this.room = page.querySelector(".control-room") as HTMLElement
 		this.coresRoot = page.querySelector(".cores-panel") as HTMLElement
 		this.worksRoot = page.querySelector(".works-panel") as HTMLElement
 		this.energyValue = page.querySelector(".readout-energy-value") as HTMLElement
 		this.energyUnit = page.querySelector(".readout-energy-unit") as HTMLElement
 		this.energyRate = page.querySelector(".readout-rate") as HTMLElement
+		this.paleLine = page.querySelector(".readout-pale") as HTMLElement
 		this.bankLine = page.querySelector(".readout-bank") as HTMLElement
 
 		this.rebuild(simulation)
@@ -58,7 +69,13 @@ export class Panels {
 		this.refreshers = []
 
 		this.coresRoot.replaceChildren(createElement("h1", "panel-title", "Cores"), ...simulation.cores.map(core => this.buildCoreStrip(core)))
-		this.worksRoot.replaceChildren(createElement("h1", "panel-title", "Upgrades"), this.buildFigures(), ...this.buildUpgrades())
+		this.worksRoot.replaceChildren(
+			this.buildObjective(),
+			this.buildSection("Station", "repair"),
+			this.buildFigures(),
+			this.buildSection("Workshop", "upgrade"),
+			this.buildSection("Centre well", "refinement"),
+		)
 
 		this.update()
 	}
@@ -69,14 +86,22 @@ export class Panels {
 		const energyText = formatEnergy(energy.value)
 		const unitStart = energyText.lastIndexOf(" ")
 
+		this.room.classList.toggle("unlit", !simulation.has("lightsRepair"))
+
 		setText(this.energyValue, energyText.slice(0, unitStart))
 		setText(this.energyUnit, energyText.slice(unitStart + 1))
+		setHidden(this.energyRate, !simulation.has("instrumentsRepair"))
 		setText(this.energyRate, `${formatEnergy(Math.max(0, energy.changeSpeed) / simulation.speed)} a second`)
+
+		const pale = simulation.engine.pale
+		setHidden(this.paleLine, !pale.seen)
+		if (pale.seen)
+			setText(this.paleLine, `${formatNumber(pale.value, pale.value < 100 ? 1 : 0)} Pale at ${Math.round(simulation.engine.accord.value * 100)}% accord`)
 
 		const bankedSeconds = simulation.engine.timeBank.value
 		setHidden(this.bankLine, bankedSeconds <= 0)
 		if (bankedSeconds > 0)
-			setText(this.bankLine, `Running at double speed for ${formatDuration(bankedSeconds)}`)
+			setText(this.bankLine, `Double speed for ${formatDuration(bankedSeconds)}`)
 
 		for (const refresh of this.refreshers)
 			refresh()
@@ -85,7 +110,8 @@ export class Panels {
 	// --- cores ---
 
 	private buildCoreStrip(core : Core) : HTMLElement {
-		const tuning = this.simulation.tuning
+		const simulation = this.simulation
+		const tuning = simulation.tuning
 		const strip = createElement("article", "core-strip")
 		strip.style.setProperty("--core-color", core.color)
 
@@ -120,13 +146,17 @@ export class Panels {
 			this.buildEquipmentRow(core, core.own.rods))
 
 		this.refreshers.push(() => {
-			setText(mass, formatNumber(core.value, core.value < 100 ? 1 : 0))
+			const instruments = simulation.has("instrumentsRepair")
+			setText(mass, formatMass(core.value))
+			setHidden(status, !instruments)
+			setHidden(flight, !instruments)
 			setText(status, `Emits ${formatNumber(core.own.emissionRate.value, 2)} times a second`)
-			setText(flight, core.inFlight > 0 ? `${formatNumber(core.inFlight, core.inFlight < 100 ? 1 : 0)} of its mass is in flight` : "All of its mass is at rest")
+			setText(flight, core.inFlight > 0 ? `${formatMass(core.inFlight)} of its mass is in flight` : "All of its mass is at rest")
+			setHidden(railLabel, !simulation.has("railRepair"))
 			setText(railValue, core.railPosition == core.railTarget ? core.railPosition.toFixed(1) : `${core.railPosition.toFixed(1)} → ${core.railTarget.toFixed(1)}`)
 			if (document.activeElement != railInput && railInput.value != String(core.railTarget))
 				railInput.value = String(core.railTarget)
-			fireButton.disabled = core.value < this.simulation.engine.emissionMass.value
+			fireButton.disabled = core.value < simulation.engine.injectionMass.value
 		})
 
 		return strip
@@ -178,7 +208,7 @@ export class Panels {
 				const percent = Math.round(own.rodInsertion.value * 100)
 				setHidden(rodLabel, !installed)
 				setText(rodValue, `${percent}%`)
-				setText(state, installed ? "Installed" : "")
+				setText(state, installed ? "Fitted" : "")
 				if (document.activeElement != rodInput && rodInput.value != String(percent))
 					rodInput.value = String(percent)
 			}
@@ -188,10 +218,10 @@ export class Panels {
 				setText(state, chargesLeft > 0 ? `${chargesLeft} emissions left` : "")
 			}
 		} else {
-			extraRefresh = () => setText(state, equipment.value > 0 ? "Installed" : "")
+			extraRefresh = () => setText(state, equipment.value > 0 ? "Fitted" : "")
 		}
 
-		const verb = equipment == own.poison ? "Dose" : "Install"
+		const verb = equipment == own.poison ? "Dose" : "Fit"
 
 		this.refreshers.push(() => {
 			setHidden(row, !equipment.seen)
@@ -207,70 +237,106 @@ export class Panels {
 		return row
 	}
 
-	// --- upgrades ---
+	// --- station ---
+
+	private buildObjective() : HTMLElement {
+		const block = createElement("div", "objective")
+		const caption = createElement("span", "objective-caption", "Next")
+		const text = createElement("p", "objective-text")
+		block.append(caption, text)
+
+		this.refreshers.push(() => {
+			const beat = this.simulation.currentBeat
+			setText(text, beat ? beat.objective : "Seal the pool.")
+		})
+
+		return block
+	}
 
 	private buildFigures() : HTMLElement {
 		const list = createElement("dl", "figures")
+		const shown : Array<{ stat : SimObject, term : HTMLElement, figure : HTMLElement }> = []
 
-		for (const statName of ["totalMass", "emissionMass", "yield", "particleSpeed"]) {
+		for (const statName of ["totalMass", "emissionMass", "yield", "particleSpeed", "accord", "energyBonus"]) {
 			const stat = this.simulation.object(statName)
 			const term = createElement("dt", undefined, stat.definition.displayName)
 			const figure = createElement("dd")
 			list.append(term, figure)
-			this.refreshers.push(() => setText(figure, formatValue(stat.value, stat.definition.format)))
+			shown.push({ stat, term, figure })
 		}
+
+		this.refreshers.push(() => {
+			setHidden(list, !this.simulation.has("instrumentsRepair"))
+			for (const { stat, term, figure } of shown) {
+				setHidden(term, !stat.seen && stat.definition.seen !== true && !["emissionMass", "yield", "particleSpeed"].includes(stat.name))
+				setHidden(figure, term.hidden === true)
+				setText(figure, formatValue(stat.value, stat.definition.format))
+			}
+		})
 
 		return list
 	}
 
-	private buildUpgrades() : HTMLElement[] {
-		const upgrades = [...this.simulation.data.values()].filter((object) : object is GameAction => object.kind == "upgrade")
-		const empty = createElement("p", "panel-empty", "Nothing to buy yet.")
+	/** A titled group of things to buy. Hidden until one of them is visible; finished ones collapse to a line. */
+	private buildSection(title : string, kind : "repair" | "upgrade" | "refinement") : HTMLElement {
+		const actions = [...this.simulation.data.values()].filter((object) : object is GameAction => object.kind == kind)
+		const section = createElement("section", "works-section")
+		const done = createElement("p", "works-done")
+		section.append(createElement("h1", "panel-title", title), ...actions.map(action => this.buildAction(action, kind)), done)
 
-		this.refreshers.push(() => setHidden(empty, upgrades.some(upgrade => upgrade.seen)))
+		this.refreshers.push(() => {
+			setHidden(section, !actions.some(action => action.seen))
+			const finished = actions.filter(action => action.bought)
+			setHidden(done, finished.length == 0)
+			if (finished.length)
+				setText(done, kind == "repair"
+					? `Working: ${finished.map(action => action.definition.displayName?.toLowerCase()).join(", ")}.`
+					: `Complete: ${finished.map(action => action.definition.displayName?.toLowerCase()).join(", ")}.`)
+		})
 
-		return [empty, ...upgrades.map(upgrade => this.buildUpgrade(upgrade))]
+		return section
 	}
 
-	private buildUpgrade(upgrade : GameAction) : HTMLElement {
+	private buildAction(action : GameAction, kind : "repair" | "upgrade" | "refinement") : HTMLElement {
 		const card = createElement("article", "upgrade")
 		const heading = createElement("header", "upgrade-heading")
 		const level = createElement("span", "upgrade-level")
-		heading.append(createElement("h2", "upgrade-name", upgrade.definition.displayName), level)
+		heading.append(createElement("h2", "upgrade-name", action.definition.displayName), level)
 
 		const needs = createElement("ul", "needs")
 		const button = createElement("button", "action")
 		button.type = "button"
-		button.addEventListener("click", () => upgrade.buy())
+		button.addEventListener("click", () => action.buy())
 
-		card.append(heading, createElement("p", "upgrade-description", upgrade.definition.description), needs, button)
+		card.append(heading, createElement("p", "upgrade-description", action.definition.description), needs, button)
 
+		const verb = kind == "repair" ? "Restore" : "Build"
 		let needsBuiltForLevel = -1
 		let needItems : Array<{ item : HTMLElement, needed : SimObject, amount : number }> = []
 
 		this.refreshers.push(() => {
-			setHidden(card, !upgrade.seen)
-			if (!upgrade.seen)
+			// Finished items leave the list; the section's summary line names them.
+			setHidden(card, !action.seen || action.bought)
+			if (card.hidden)
 				return
 
-			if (needsBuiltForLevel != upgrade.value) {
-				needsBuiltForLevel = upgrade.value
-				needItems = Object.entries(upgrade.calculatedRequirements).map(([neededName, amount]) => {
+			if (needsBuiltForLevel != action.value) {
+				needsBuiltForLevel = action.value
+				needItems = Object.entries(action.calculatedRequirements).map(([neededName, amount]) => {
 					const needed = this.simulation.object(neededName)
-					const item = createElement("li", undefined, `${needed.definition.displayName} at ${formatNumber(amount, amount < 100 ? 1 : 0)}`)
+					const item = createElement("li", undefined, `${needed.definition.displayName} at ${formatMass(amount)}`)
 					return { item, needed, amount }
 				})
 				needs.replaceChildren(...needItems.map(need => need.item))
-				setHidden(needs, needItems.length == 0 || upgrade.bought)
+				setHidden(needs, needItems.length == 0)
 			}
 
 			for (const need of needItems)
 				need.item.classList.toggle("unmet", need.needed.value < need.amount)
 
-			setText(level, upgrade.bought ? `Level ${upgrade.value}, complete` : `Level ${upgrade.value}`)
-			setHidden(button, upgrade.bought)
-			setText(button, `Buy for ${priceOf(upgrade)}`)
-			button.disabled = !upgrade.canAfford
+			setText(level, kind == "repair" ? "" : `Level ${action.value}`)
+			setText(button, `${verb} for ${priceOf(action)}`)
+			button.disabled = !action.canAfford
 		})
 
 		return card
